@@ -1,56 +1,6 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <assert.h>
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/epoll.h>
-#include <fcntl.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <string.h> 
-#include <vector>
-#include <unordered_map>
-#include <iostream>
-#include <signal.h>
 
-#define SERVER_PORT 12345
-#define SERVER_IP "0.0.0.0"
-#define TEST_NUM 10
-#define TEST_TIME 10 //
-
-class stressTest{
-public:
-    stressTest(int testNum, const char* serverIp, int serverPort) : testNum(testNum), serverPort(serverPort){
-        strcpy(this->serverIp, serverIp);
-        testFds = new std::vector<int>(testNum);
-        for(int i = 0; i < testNum; i++){ //默认设置为-1
-            (*testFds)[i] = -1;
-            
-        }
-    }
-    ~stressTest(){        
-        delete testFds;
-    }
-    void startTest();
-private:
-    static bool stop;
-    int testNum;
-    int serverPort;
-    char serverIp[100]; 
-    std::vector<int>* testFds;
-    std::unordered_map<int, int> fd2IdxMap;
-
-    int setnonblocking(int fd);
-    void addfd(int epoll_fd, int fd);
-    bool write_nbytes(int sockfd, const char* buffer, int len);
-    bool read_once(int sockfd, char* buffer, int len);
-    int start_conn(int epoll_fd);
-    void close_conn(int epoll_fd, int sockfd);
-    void closeAllConn(int epoll_fd);
-    static void sig_handler( int sig );
-    void addsig( int sig );
-};
+#include "stressTest.h"
+#define MSG_LEN 64
 bool stressTest::stop = false;
 void stressTest::closeAllConn(int epoll_fd)
 {
@@ -102,6 +52,22 @@ bool stressTest::write_nbytes(int sockfd, const char* buffer, int len)
     }   
 }
 
+bool stressTest::write_once(int sockfd, const char* buffer, int len)
+{
+    int bytes_write = 0;
+    printf("write out %d bytes to socket %d\n", len, sockfd);
+    bytes_write = send(sockfd, buffer, len, 0);
+    if (bytes_write == -1)
+    {   
+        return false;
+    }   
+    else if (bytes_write == 0) 
+    {   
+        return false;
+    }   
+    return true;
+}
+
 bool stressTest::read_once(int sockfd, char* buffer, int len)
 {
     int bytes_read = 0;
@@ -120,6 +86,32 @@ bool stressTest::read_once(int sockfd, char* buffer, int len)
     return true;
 }
 
+// bool stressTest::readMultiple(int sockfd, char* buffer, int len， )
+// {
+//     int readBytes = 0;
+//     memset(buffer, '\0', len);
+//     while(1){
+//         readBytes = recv(sockfd, buffer, len, 0);
+//         if (readBytes == -1) //读取数据出错
+//         {
+//             if(errno == EAGAIN) //非阻塞且无数据可读
+//                 return true;
+//             else
+//                 return false;
+//         }
+//         else if (readBytes == 0)  //服务器已关闭
+//         {
+//             return false;
+//         }else{ //成功读取数据
+//             printf("read in %d bytes from socket %d with content: %s\n", readBytes, sockfd, buffer);            
+//             if(sockfd == sendSocket && strcmp(buffer, sendRequestBuff) == 0){
+//                 successRequestNum++;
+//                 successRequest = true;
+//             }
+//         } 
+//     } 
+// }
+
 int stressTest::start_conn(int epoll_fd)
 {
     int ret = 0;
@@ -133,6 +125,9 @@ int stressTest::start_conn(int epoll_fd)
     {
         usleep(100000);
         int sockfd = socket(PF_INET, SOCK_STREAM, 0);
+        int lowat = MSG_LEN; //设置发送和接收的低水位值，都是MSG_LEN，只有发送或接受缓冲区大小为MSG_LEN才触发读写事件，accept返回的sock将会自动继承这个值
+        setsockopt(sockfd, SOL_SOCKET, SO_RCVLOWAT, &lowat, sizeof(lowat));
+        setsockopt(sockfd, SOL_SOCKET, SO_SNDLOWAT, &lowat, sizeof(lowat));
         printf("create 1 sock\n");
         if(sockfd < 0)
         {
@@ -141,10 +136,10 @@ int stressTest::start_conn(int epoll_fd)
         }
 
         if (connect(sockfd, (struct sockaddr*)&address, sizeof(address)) == 0)
-        {
+        { 
             printf("build connection %d\n", i);
-            addfd(epoll_fd, sockfd);
-            (*testFds)[i] = sockfd; //保存到测试列表
+            addfd(epoll_fd, sockfd);  
+            (*testFds)[i] = sockfd; //保存到测试列表 
             fd2IdxMap[sockfd] = i; //建立fd 2 idx 映射关系
         }
     }
@@ -161,36 +156,22 @@ void stressTest::close_conn(int epoll_fd, int sockfd)
     close(sockfd);
 }
 
-void stressTest::sig_handler( int sig )
-{
-     stressTest::stop = true;
-}
 
-void stressTest::addsig( int sig )
-{
-    struct sigaction sa;
-    memset( &sa, '\0', sizeof( sa ) );
-    sa.sa_handler = sig_handler;
-    sa.sa_flags |= SA_RESTART;
-    sigfillset( &sa.sa_mask );
-    assert( sigaction( sig, &sa, NULL ) != -1 );
-}
 
 void stressTest::startTest()
 {
     int epoll_fd = epoll_create(100);
     int ret = start_conn(epoll_fd);
     if(ret == -1){
-        std::cout << "Cannot create " << TEST_NUM << "client" << std::endl; 
+        std::cout << "Cannot create " << testNum << "client" << std::endl; 
     }
     epoll_event events[ 10000 ];
-    char buffer[ 2048 ];
+    char buffer[ MSG_LEN ];
     long long successRequestNum = 0;
     bool successRequest = true;
-    int sendIdx = -1, sendSocket = 0;  
-    addsig( SIGALRM );
-    addsig( SIGTERM );
-    alarm( TEST_TIME );
+    int sendIdx = -1;
+    int sendSocket = 0;  
+    const char sendRequestBuff[MSG_LEN] = "send OK";
     while (!stop)
     {
         if(successRequest){
@@ -210,32 +191,57 @@ void stressTest::startTest()
             if (events[i].events & EPOLLIN)
             {   
                 int readBytes = 0;
-                memset(buffer, '\0', 2048);
-                readBytes = recv(sockfd, buffer, 2048, 0);
-                if (readBytes == -1) //读取数据出错
-                {
-                    close_conn(epoll_fd, sockfd);
-                }
-                else if (readBytes == 0)  //服务器已关闭
-                {
-                    close_conn(epoll_fd, sockfd);
-                }else{ //成功读取数据
-                    printf("read in %d bytes from socket %d with content: %s\n", readBytes, sockfd, buffer);
-                    if(sockfd == sendSocket){
-                        successRequestNum++;
-                        successRequest = true;
+                //memset(buffer, '\0', MSG_LEN);
+                //readBytes = recv(sockfd, buffer, MSG_LEN, 0);
+                //readMultiple(sockfd, buffer,  MSG_LEN);
+                while(true){ //循环把数据读出来
+                    readBytes = recv(sockfd, buffer, MSG_LEN, 0);
+                    if (readBytes == -1) //读取数据出错
+                    {
+                        if(errno == EAGAIN){ //非阻塞且无数据可读
+                            break;
+                        }else{ //其它错误
+                            close_conn(epoll_fd, sockfd);
+                            break;
+                        } 
                     }
+                    else if (readBytes == 0)  //服务器已关闭
+                    {
+                        close_conn(epoll_fd, sockfd);
+                        break;
+                    }else{ //成功读取数据
+                        printf("read in %d bytes from socket %d with content: %s\n", readBytes, sockfd, buffer);            
+                        if(sockfd == sendSocket && strcmp(buffer, sendRequestBuff) == 0){ //读到请求成功返回信息 sockfd == sendSocket && strcmp(buffer, sendRequestBuff) == 0
+                            successRequestNum++;
+                            successRequest = true;
+                        }
+                    } 
                 } 
+                // if (readBytes == -1) //读取数据出错
+                // {
+                //     close_conn(epoll_fd, sockfd);
+                // }
+                // else if (readBytes == 0)  //服务器已关闭
+                // {
+                //     close_conn(epoll_fd, sockfd);
+                // }else{ //成功读取数据
+                //     printf("read in %d bytes from socket %d with content: %s\n", readBytes, sockfd, buffer);
+                    
+                //     if(sockfd == sendSocket && strcmp(buffer, sendRequestBuff) == 0){
+                //         successRequestNum++;
+                //         successRequest = true;
+                //     }
+                // } 
                 // struct epoll_event event;
-                // event.events = EPOLLOUT | EPOLLET | EPOLLERR;
+                // event.events = EPOLLOUT |  EPOLLERR;
                 // event.data.fd = sockfd;
                 // epoll_ctl(epoll_fd, EPOLL_CTL_MOD, sockfd, &event);
             }
             else if(events[i].events & EPOLLOUT) 
             {
-                char tmp[128];
+                char tmp[MSG_LEN];
                 sprintf(tmp, "Client %d Say : Hello", sockfd);
-                if (! write_nbytes(sockfd, tmp, strlen(tmp)))
+                if (! write_once(sockfd, tmp, MSG_LEN))
                 {
                     close_conn(epoll_fd, sockfd);
                 }
@@ -255,9 +261,4 @@ void stressTest::startTest()
     close(epoll_fd); 
 }
 
-int main(void)
-{
-    stressTest test(TEST_NUM, SERVER_IP, SERVER_PORT);
-    test.startTest();   
-}
 
