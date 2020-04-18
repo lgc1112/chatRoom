@@ -1,6 +1,8 @@
-server : server.o
-	g++ -o server server.o
-server.o : server.cpp 
-	g++ -c server.cpp
+server : myServer.o myServerEntry.o
+	g++ -o server myServerEntry.o myServer.o 
+myServerEntry.o : myServerEntry.cpp myServer.h
+	g++ -c myServerEntry.cpp  
+myServer.o : myServer.cpp myServer.h
+	g++ -c myServer.cpp
 clean :
-	rm server.o server
+	rm myServer.o myServerEntry.o server

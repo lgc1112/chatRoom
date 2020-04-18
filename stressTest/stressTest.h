@@ -17,9 +17,13 @@
 #include <iostream>
 #include <signal.h>
 
+#define TEST_NUM 10
+#define TEST_TIME 10 //
+
 class stressTest{
 public:
     static bool stop;
+    static bool success;
     stressTest(int testNum, const char* serverIp, int serverPort) : testNum(testNum), serverPort(serverPort){
         strcpy(this->serverIp, serverIp);
         testFds = new std::vector<int>(testNum);
@@ -29,7 +33,7 @@ public:
         }
     }
     ~stressTest(){        
-        delete testFds;
+        delete testFds; 
     }
     void startTest();
 private:
@@ -40,12 +44,11 @@ private:
     std::unordered_map<int, int> fd2IdxMap;
 
     int setnonblocking(int fd);
-    void addfd(int epoll_fd, int fd);
-    bool write_nbytes(int sockfd, const char* buffer, int len);
-    bool read_once(int sockfd, char* buffer, int len);
-    int start_conn(int epoll_fd);
-    void close_conn(int epoll_fd, int sockfd);
+    void addfd(int epoll_fd, int fd); 
+    bool readOnce(int sockfd, char* buffer, int len);
+    int startConn(int epoll_fd);
+    void closeConn(int epoll_fd, int sockfd);
     void closeAllConn(int epoll_fd); 
-    bool write_once(int sockfd, const char* buffer, int len); 
+    bool writeOnce(int sockfd, const char* buffer, int len); 
 };
 #endif
