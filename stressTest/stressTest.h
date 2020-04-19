@@ -17,39 +17,39 @@
 #include <iostream>
 #include <signal.h>
 
-#define TEST_NUM 10
-#define TEST_TIME 10 //
+#define MSG_LEN 64 //每条消息的长度，为解决TCP粘包和拆包问题，将每条消息的长度固定为MSG_LEN
+#define TEST_TIME 10 //测试的时间
 
-class stressTest{
+class StressTest{
 public:
-    stressTest(int testNum, const char* serverIp, int serverPort, int pipeFd) : testNum(testNum), serverPort(serverPort), pipeFd(pipeFd){
+    StressTest(int testNum, const char* serverIp, int serverPort, int pipeFd) : testNum(testNum), serverPort(serverPort), pipeFd(pipeFd){
         strcpy(this->serverIp, serverIp);
         testFds = new std::vector<int>(testNum);
         for(int i = 0; i < testNum; i++){ //默认设置为-1
             (*testFds)[i] = -1;            
         }
     }
-    ~stressTest(){        
-        delete testFds; 
+    ~StressTest(){        
+        delete testFds; //自动回收
     }
     void startTest();
 private:
-    bool stop = false;
-    bool success = false;
-    int testNum;
-    int serverPort;
-    char serverIp[32]; 
-    int pipeFd;
-    std::vector<int>* testFds;
-    std::unordered_map<int, int> fd2IdxMap;
+    bool stop = false; //测试结束标志
+    bool success = false; //测试成功标志
+    int testNum; //测试客户的数量
+    int serverPort; //服务器端口号
+    char serverIp[32]; //服务器ip
+    int pipeFd; //接收信号的管道
+    std::vector<int>* testFds; //记录当前所有测试连接的fd
+    std::unordered_map<int, int> fd2IdxMap; //保存fd到clientfds的index的映射关系
 
-    int setnonblocking(int fd);
-    void addClientFd(int epoll_fd, int fd); 
-    void addPipeFd(int epoll_fd, int fd); 
-    bool readOnce(int sockfd, char* buffer, int len);
-    int startConn(int epoll_fd);
-    void closeConn(int epoll_fd, int sockfd);
-    void closeAllConn(int epoll_fd); 
-    bool writeOnce(int sockfd, const char* buffer, int len); 
+    int setnonblocking(int fd); //设置非阻塞
+    void addClientFd(int epollFd, int fd); //添加测试fd到epoll
+    void addPipeFd(int epollFd, int fd); //添加监听fd到epoll
+    bool readOnce(int sockfd, char* buffer, int len);//读取一次数据
+    int startConn(int epollFd);//建立测试连接
+    void closeConn(int epollFd, int sockfd);//关闭指定测试连接
+    void closeAllConn(int epollFd); //关闭所有测试连接
+    bool writeOnce(int sockfd, const char* buffer, int len); //写一次数据
 };
 #endif
