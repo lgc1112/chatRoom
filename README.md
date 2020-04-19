@@ -10,6 +10,7 @@
 &emsp;&emsp;为解决TCP粘包、拆包和消息存储问题，简单将每条消息的长度固定为MSG_LEN（64）
 ### 功能1
 &emsp;&emsp;在服务器端使用单线程和epoll监听IO就绪事件，使用一个数组clientfds保存所有客户的fd，当接收到一个客户端发来的消息，则遍历clientfds分发消息到每个客户的fd。
+
 &emsp;&emsp;在客户端使用单线程和epoll监听IO就绪事件，同时监听键盘输入和连接socket。键盘输入时，若输入数据小于MSG_LEN，则使用'\0'补齐到长度为MSG_LEN再发送到服务器。若长度大于或等于MSG_LEN，则自动将消息分段为MSG_LEN - 1的长度，分段后的每条消息补上一个'\0'字符后发送到服务器。确保每条消息的长度固定为MSG_LEN（64）。同时将服务器发来的消息打印出来。
 
 ### 功能2
@@ -20,17 +21,24 @@
 ## 代码文件介绍
 #### server文件夹保存的是服务器的代码
 server/myServerEntry.cpp： 是服务器入口代码，里面有main函数，功能主要是创建MyServer实例、注册时钟信号、通过MyServer实例开启服务器等。
+
 server/myServe.h：声明MyServer类的各种成员变量和成员函数。
+
 server/myServe.cpp： MyServer类的成员函数实现。
+
 server/makefile： 编译文件
 
 #### stessTest文件夹保存的是性能测试的代码
 stessTest/testEntry.cpp： 是测试入口代码，里面有main函数，功能主要是创建StressTest实例、注册关闭信号、通过StressTest实例开始性能测试。
+
 stessTest/stressTest.h： 声明StressTest类的各种成员变量和成员函数。
+
 stessTest/stressTest.cpp： StressTest类的成员函数实现。
+
 stessTest/makefile： 编译文件
 
 #### client文件夹保存的是客户端的代码
 client/myClient.cpp： main函数入口，功能主要是建立服务器连接，监听用户输入及连接socket状态，将用户输入进行处理后发送到服务器和将服务器发来的消息处理后打印出来。
+
 client/makefile： 编译文件
 
