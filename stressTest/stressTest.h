@@ -22,14 +22,11 @@
 
 class stressTest{
 public:
-    static bool stop;
-    static bool success;
-    stressTest(int testNum, const char* serverIp, int serverPort) : testNum(testNum), serverPort(serverPort){
+    stressTest(int testNum, const char* serverIp, int serverPort, int pipeFd) : testNum(testNum), serverPort(serverPort), pipeFd(pipeFd){
         strcpy(this->serverIp, serverIp);
         testFds = new std::vector<int>(testNum);
         for(int i = 0; i < testNum; i++){ //默认设置为-1
-            (*testFds)[i] = -1;
-            
+            (*testFds)[i] = -1;            
         }
     }
     ~stressTest(){        
@@ -37,14 +34,18 @@ public:
     }
     void startTest();
 private:
+    bool stop = false;
+    bool success = false;
     int testNum;
     int serverPort;
     char serverIp[32]; 
+    int pipeFd;
     std::vector<int>* testFds;
     std::unordered_map<int, int> fd2IdxMap;
 
     int setnonblocking(int fd);
-    void addfd(int epoll_fd, int fd); 
+    void addClientFd(int epoll_fd, int fd); 
+    void addPipeFd(int epoll_fd, int fd); 
     bool readOnce(int sockfd, char* buffer, int len);
     int startConn(int epoll_fd);
     void closeConn(int epoll_fd, int sockfd);

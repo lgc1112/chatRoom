@@ -1,8 +1,7 @@
 
 #include "stressTest.h"
-#define MSG_LEN 64
-bool stressTest::stop = false;
-bool stressTest::success = false;
+#define MSG_LEN 64 
+
 void stressTest::closeAllConn(int epoll_fd)
 {
     for(int i = 0; i < testNum; i++){ //关闭所有未关闭的连接
@@ -19,11 +18,20 @@ int stressTest::setnonblocking(int fd)
     return old_option;
 }
 
-void stressTest::addfd(int epoll_fd, int fd)
+void stressTest::addClientFd(int epoll_fd, int fd)
 {
     epoll_event event;
     event.data.fd = fd;
     event.events = EPOLLIN | EPOLLET | EPOLLERR | EPOLLRDHUP;
+    epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &event);
+    setnonblocking(fd);
+}
+
+void stressTest::addPipeFd(int epoll_fd, int fd)
+{
+    epoll_event event;
+    event.data.fd = fd;
+    event.events = EPOLLIN | EPOLLET;
     epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &event);
     setnonblocking(fd);
 }
@@ -114,9 +122,11 @@ int stressTest::startConn(int epoll_fd)
         if (connect(sockfd, (struct sockaddr*)&address, sizeof(address)) == 0)
         { 
             printf("build connection %d\n", i);
-            addfd(epoll_fd, sockfd);  
+            addClientFd(epoll_fd, sockfd);  
             (*testFds)[i] = sockfd; //保存到测试列表 
             fd2IdxMap[sockfd] = i; //建立fd 2 idx 映射关系
+        }else{
+            ret = -1;
         }
     }
     return ret;
@@ -139,8 +149,12 @@ void stressTest::startTest()
     int epoll_fd = epoll_create(100);
     int ret = startConn(epoll_fd);
     if(ret == -1){
-        std::cout << "Cannot create " << testNum << "client" << std::endl; 
+        std::cout << "Cannot create " << testNum << " client" << std::endl; 
+        stop = true;
     }
+ 
+    addPipeFd(epoll_fd, pipeFd);  //监听管道
+
     epoll_event events[ 10000 ];
     char buffer[ MSG_LEN ];
     long long successRequestNum = 0;
@@ -164,6 +178,36 @@ void stressTest::startTest()
         for (int i = 0; i < fds; i++)
         {   
             int sockfd = events[i].data.fd;
+            if(sockfd == pipeFd && events[i].events & EPOLLIN){
+                int sig;
+                char signals[1024];
+                ret = recv( pipeFd, signals, sizeof( signals ), 0 );
+                if( ret == -1 )
+                {
+                    continue;
+                }
+                else if( ret == 0 )
+                {
+                    continue;
+                }
+                else
+                {
+                    for( int i = 0; i < ret; ++i )
+                    { 
+                        printf( "Caugh the signal %d\n", signals[i] );
+                        switch( signals[i] )
+                        {
+                            case SIGALRM: success = true;  //时钟信号关闭统计，说明测试成功结束
+                            case SIGTERM: 
+                            case SIGINT: {
+                                stop = true;
+                                break;
+                            }
+                            default: continue; //其它信号继续
+                        }
+                    }
+                }
+            }
             if (events[i].events & EPOLLIN)
             {   
                 int readBytes = 0; 
@@ -214,6 +258,7 @@ void stressTest::startTest()
                 //stop = true;
                 //break;
             }
+            
         }
     }
     if(success)

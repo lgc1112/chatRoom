@@ -53,11 +53,11 @@ int main( void )
     struct epoll_event event;
     event.events = EPOLLIN | EPOLLRDHUP;
     event.data.fd = STDIN_FILENO;
-    epoll_ctl(epollFd, EPOLL_CTL_ADD, STDIN_FILENO, &event); 
+    epoll_ctl(epollFd, EPOLL_CTL_ADD, STDIN_FILENO, &event); //监听输入事件
 
     event.events = EPOLLIN | EPOLLRDHUP;
     event.data.fd = connFd;
-    epoll_ctl(epollFd, EPOLL_CTL_ADD, connFd, &event); 
+    epoll_ctl(epollFd, EPOLL_CTL_ADD, connFd, &event);  //监听连接socket
 
     bool stop = false;
     while( !stop )

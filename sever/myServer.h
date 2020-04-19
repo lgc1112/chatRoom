@@ -14,37 +14,46 @@
 #include <stdlib.h>
 #include <sys/epoll.h>
 #include <iostream>
+#include <fstream>
 #include <vector>
 #include <unordered_map>
 #include <signal.h>
 
-#define USER_LIMIT 10
-//#define BUFFER_SIZE 64
-#define FD_LIMIT 65535
-#define LISTEN_PORT 12345
+#define USER_LIMIT 10 //连接的用户数量限制
 
-#define LISTEN_IP "0.0.0.0"
-#define MSG_LEN 64
-#define RECORD_SIZE 100
+
+#define MSG_LEN 64 //每条消息的长度，为解决TCP粘包和拆包问题，将每条消息的长度固定为MSG_LEN
+#define RECORD_SIZE 100 //记录历史数据的数量
+#define FNAME  "./historyRecord" //记录历史数据的文件
+
 struct ClientData
 {
-    int fd; 
-    char* writeBuf; 
+    int fd; //用户fd
+    char* writeBuf; //待写指针
 };
-struct HistoryRecord
+
+struct HistoryRecord //记录历史信息的数据结构
 {
+private:
     int size; //所有记录的数量
     int sendIdx; //当前发送数据所在的位置index(第sendIdx条消息)
+
+public:
     char records[RECORD_SIZE * MSG_LEN]; //记录历史数据
+
     HistoryRecord() : size(0), sendIdx(-1){
         memset(records, '\0', sizeof(records));
     }
 
-    int getSendIdx(){
+    int getSize(){
+        return size;
+    }
+
+     int getSendIdx(){
         return sendIdx;
     }
 
-    int increaseSendIdx(){ //sendIdx+MSG_LEN为下一条消息所在的位置
+    int increaseSendIdx(){ //sendIdx+1为下一条消息所在的位置
         if(size < RECORD_SIZE){
             size++;
             sendIdx++;
@@ -56,36 +65,47 @@ struct HistoryRecord
         return sendIdx;
     }
 };
+
 class MyServer
 {
 public:
-    static bool stop;
-    MyServer(const char* ip, int port) : listenPort(port), userCounter(0){
+    MyServer(const char* ip, int port, int pipeFd) : listenPort(port), userCounter(0), pipeFd(pipeFd){
         strcpy(listenIp, ip);
         clientfds = *(new std::vector<ClientData*>(USER_LIMIT));
+        mHistoryRecord = new HistoryRecord();
+        loadRecords(mHistoryRecord);//加载历史记录
+
     }
     ~MyServer(){ 
+        storeRecords(mHistoryRecord);//保存历史记录
+        delete mHistoryRecord;
         //delete &clientfds;
     }
     void startListening();
 
 private:
-    const char sendRequestBuff[MSG_LEN] = "send OK";
-    int listenPort;
-    char listenIp[32];
-    int userCounter;
-    bool isSending = false;
-    int sendNum = 0;
-    HistoryRecord mHistoryRecord;
+    bool stop = false; //停止标志
+    int pipeFd; //信号通知管道
+    int listenPort; //监听端口
+    char listenIp[32]; //监听ip
+    int userCounter; //当前连接的用户数量
+    bool isSending = false; //是否处于数据真正分发的状态
+    int sendNum = 0;//已发送数据的数量
+    HistoryRecord* mHistoryRecord; //历史记录表
     
 
-    std::vector<ClientData*> clientfds; 
-    std::unordered_map<int, int> fd2IdxMap;
+    std::vector<ClientData*> clientfds; //记录当前所有连接的fd
+    std::unordered_map<int, int> fd2IdxMap;//保存fd到clientfds的index的映射关系
 
-    int setnonblocking(int fd);
-    int addClientFd(int& epollFd, int& fd);
-    int deleteClientFd(int epollFd, int fd);
-    int deleteAllClientFd(int epollFd);
-    void sendHistoryRecord(int fd);
+    int setnonblocking(int fd);//设置费阻塞
+    int addClientFd(int epollFd, int fd);//添加用户fd到epoll和clientfds，建立fd到clientfds的index的映射关系
+    int addPipeFd(int epollFd, int fd);//添加监听fd到epoll
+    int deleteClientFd(int epollFd, int fd);//关闭指定用户fd
+    int deleteAllClientFd(int epollFd);//关闭所有用户fd
+    void sendHistoryRecord(int fd); //发送最近100条历史记录到fd
+    void loadRecords(HistoryRecord* mHistoryRecord);//加载历史记录到mHistoryRecord
+    void storeRecords(HistoryRecord* mHistoryRecord);//保存历史记录到mHistoryRecord
 };
+
+
 #endif
