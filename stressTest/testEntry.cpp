@@ -2,7 +2,7 @@
 #define SERVER_PORT 12345
 #define SERVER_IP "0.0.0.0"
 
-#define TEST_NUM 10 //测试的用户数量
+#define TEST_NUM 1000 //测试的用户数量
 static int pipeFd[2];//存储管道fd，主要用于信号通知
 
 void sig_handler(int sig)
@@ -31,7 +31,8 @@ int main(void)
     addsig(SIGALRM); //注册时钟信号
     addsig(SIGINT); //注册关闭信号
     addsig(SIGTERM);
-    alarm(TEST_TIME); //等待TEST_TIME秒触发信号
+    test.init();  //初始化，建立 TEST_NUM 个连接
+    alarm(TEST_TIME); //等待TEST_TIME秒后触发结束信号
     test.startTest();   
     close(pipeFd[1]);
     close(pipeFd[0]);
